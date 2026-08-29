@@ -94,6 +94,7 @@ const STR = {
     actionRaise: (name, amt) => `${name}: 레이즈 → ${amt}칩`,
     cats: { 1: "원 페어", 2: "투 페어", 3: "트리플", 4: "스트레이트", 5: "풀하우스", 6: "포카드" },
     waitingContinue: (name) => `${name}가 다음 라운드로 넘어가길 기다리는 중...`,
+    tieRedealBanner: "무승부로 인한 재딜 · 베팅 없이 바로 카드 교환",
     chooseLang: "언어를 선택하세요 / Choose your language",
     rulesTitle: "게임 규칙",
     rules: [
@@ -166,6 +167,7 @@ const STR = {
     actionRaise: (name, amt) => `${name}: Raise → ${amt} chips`,
     cats: { 1: "One Pair", 2: "Two Pair", 3: "Triple", 4: "Straight", 5: "Full House", 6: "Four of a Kind" },
     waitingContinue: (name) => `Waiting for ${name} to continue...`,
+    tieRedealBanner: "Redeal from a tie · straight to the card split, no betting",
     chooseLang: "언어를 선택하세요 / Choose your language",
     rulesTitle: "How to Play",
     rules: [
@@ -426,7 +428,7 @@ function Waiting({ text }) {
 function PickRecap({ drawn, faceUpIdx, takenIdx, t }) {
   if (takenIdx === null || takenIdx === undefined || !drawn || drawn.length < 2) return null;
   return (
-    <div style={{ position: "absolute", left: 12, bottom: 12, display: "flex", flexDirection: "column", gap: 5, background: "rgba(10,33,27,0.9)", border: `1px solid ${C.feltLine}`, borderRadius: 10, padding: "8px 10px", zIndex: 5 }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "rgba(10,33,27,0.9)", border: `1px solid ${C.feltLine}`, borderRadius: 10, padding: "8px 10px" }}>
       <div style={{ fontSize: 10, color: C.ink2, fontFamily: "'Inter'" }}>{t("opponentTookCard")}</div>
       <div style={{ display: "flex", gap: 6 }}>
         {drawn.map((c, idx) => {
@@ -677,7 +679,6 @@ function ChoiceHoldemOnline() {
 
   return (
     <div style={{ minHeight: "100dvh", background: `radial-gradient(ellipse at top, ${C.felt}, ${C.feltDeep})`, display: "flex", flexDirection: "column", fontFamily: "'Inter', sans-serif", position: "relative" }}>
-      {showRecap && <PickRecap drawn={state.arrangeDrawn} faceUpIdx={state.arrangeFaceUpIdx} takenIdx={state.chooseTakenBy} t={t} />}
       <TopBar state={state} connected={connected} roomCode={roomCode} t={t} />
 
       {state.phase !== "GAME_OVER" && (
@@ -688,6 +689,11 @@ function ChoiceHoldemOnline() {
             <div style={{ fontSize: 12, color: C.ink2, marginBottom: 6 }}>{t("myCards")}</div>
             <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>{state.personal[mySeat].map((c) => <PlayingCard key={c.id} value={c.v} size="md" />)}</div>
           </div>
+          {showRecap && (
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+              <PickRecap drawn={state.arrangeDrawn} faceUpIdx={state.arrangeFaceUpIdx} takenIdx={state.chooseTakenBy} t={t} />
+            </div>
+          )}
         </>
       )}
 
@@ -722,6 +728,11 @@ function ChoiceHoldemOnline() {
         isMyTurn("ARRANGE") ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 24 }}>
             <div style={{ textAlign: "center", fontSize: 12, color: C.ink2, marginBottom: 14 }}>{t("arrangeInstruction")}</div>
+            {state.isTieRedeal && (
+              <div style={{ textAlign: "center", fontSize: 12, color: C.gold, background: C.danger2, borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>
+                {t("tieRedealBanner")}
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "center", gap: 16, flex: 1, alignItems: "center" }}>
               {state.arrangeDrawn.map((c, idx) => (
                 <div key={c.id} onClick={() => go((s) => ({ ...s, arrangeFaceUpIdx: idx }))} style={{ cursor: "pointer", textAlign: "center" }}>
@@ -733,7 +744,7 @@ function ChoiceHoldemOnline() {
             <Btn onClick={() => go((s) => confirmArrange(s, s.arrangeFaceUpIdx))}>{t("confirmArrange")}</Btn>
           </div>
         ) : (
-          <Waiting text={t("waitingArrange", state.names[state.dealer])} />
+          <Waiting text={`${t("waitingArrange", state.names[state.dealer])}${state.isTieRedeal ? "\n" + t("tieRedealBanner") : ""}`} />
         )
       )}
 
@@ -741,6 +752,11 @@ function ChoiceHoldemOnline() {
         isMyTurn("CHOOSE") ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 24 }}>
             <div style={{ textAlign: "center", fontSize: 12, color: C.ink2, marginBottom: 14 }}>{t("chooseInstruction")}</div>
+            {state.isTieRedeal && (
+              <div style={{ textAlign: "center", fontSize: 12, color: C.gold, background: C.danger2, borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>
+                {t("tieRedealBanner")}
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "center", gap: 16, flex: 1, alignItems: "center" }}>
               {state.arrangeDrawn.map((c, idx) => {
                 const isFaceUp = idx === state.arrangeFaceUpIdx;
@@ -756,7 +772,7 @@ function ChoiceHoldemOnline() {
             <Btn disabled={state.chooseTakenBy === null} onClick={() => go((s) => confirmChoose(s, s.chooseTakenBy))}>{state.chooseTakenBy === null ? t("chooseFirst") : t("confirm")}</Btn>
           </div>
         ) : (
-          <Waiting text={t("waitingChoose", state.names[1 - state.dealer])} />
+          <Waiting text={`${t("waitingChoose", state.names[1 - state.dealer])}${state.isTieRedeal ? "\n" + t("tieRedealBanner") : ""}`} />
         )
       )}
 
