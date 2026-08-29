@@ -17,9 +17,10 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script>Babel.disableScriptTags();</script>
 <script src="/socket.io/socket.io.js"></script>
 
-<script type="text/babel" data-presets="react">
+<script type="text/plain" id="app-source">
 const { useState, useEffect, useRef } = React;
 
 /* ---------------------------------------------------------
@@ -809,6 +810,19 @@ function ChoiceHoldemOnline() {
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<ChoiceHoldemOnline />);
+</script>
+
+<script>
+  // Manually compile and run our app code instead of relying on Babel's automatic
+  // whole-page script scanning — that auto-scan can be tripped up by unrelated
+  // scripts elsewhere on the page (e.g. ones injected by browser extensions),
+  // producing a page that never renders. Doing it explicitly here means our code
+  // only ever depends on itself.
+  var source = document.getElementById("app-source").textContent;
+  var compiled = Babel.transform(source, { presets: [["react", { runtime: "classic" }]] }).code;
+  var runScript = document.createElement("script");
+  runScript.textContent = compiled;
+  document.body.appendChild(runScript);
 </script>
 </body>
 </html>
