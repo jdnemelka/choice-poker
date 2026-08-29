@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>초이스 홀덤 / Choice Hold'em</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&display=swap');
+  html, body { margin: 0; padding: 0; background: #0A211B; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  #root { min-height: 100vh; min-height: 100dvh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script>Babel.disableScriptTags();</script>
+<script src="/socket.io/socket.io.js"></script>
+
+<script type="text/plain" id="app-source">
+const { useState, useEffect, useRef } = React;
+
+/* ---------------------------------------------------------
+   THEME
+--------------------------------------------------------- */
+const C = {
+  felt: "#0E2A22", feltDeep: "#0A211B", feltLine: "#1C4536",
+  gold: "#D4AF6A", goldDim: "#8C7440", cream: "#F6F0E2",
+  ink: "#132420", ink2: "#3A554C", danger: "#B4482E", danger2: "#7A2E1D", ok: "#4C8C6B",
+};
+const Icon = ({ children, size = 14 }) => <span style={{ fontSize: size, lineHeight: 1 }}>{children}</span>;
+
+/* ---------------------------------------------------------
+   TRANSLATIONS
+--------------------------------------------------------- */
+const STR = {
+  ko: {
+    title: "초이스 홀덤",
+    subtitle: "폰 두 대로 즐기는 온라인 대전",
+    namePlaceholder: "내 이름",
+    createRoom: "방 만들기",
+    joinRoom: "방 코드로 참가하기",
+    joinCodePlaceholder: "방 코드 (예: AB12)",
+    join: "참가하기",
+    back: "뒤로",
+    rulesBtn: "게임 규칙",
+    closeRules: "닫기",
+    roomNotFound: "그 코드로 된 방을 찾을 수 없어요. 코드를 다시 확인해주세요.",
+    alreadyStarted: "이미 진행 중인 방이에요. 어느 자리였는지 선택해주세요.",
+    imPlayer: (name) => `저는 ${name} 입니다`,
+    passCodeToOpponent: "상대에게 코드를 알려주세요",
+    waitingForOpponent: "상대가 접속하면 자동으로 시작돼요...",
+    connectionLost: "서버 연결이 끊겼어요 — 재연결 시도 중...",
+    round: "ROUND",
+    baseBet: "기본배팅",
+    viewCode: "코드 보기",
+    roomCodeLabel: "방 코드",
+    dealerTag: "선",
+    myCards: "내 카드",
+    myTurn: "내 차례예요",
+    callNeed: (n) => `콜하려면 ${n}칩 필요`,
+    checkEquivalent: "콜 = 체크",
+    fold: "폴드",
+    call: "콜",
+    allInCall: "올인 콜",
+    raise: "레이즈",
+    waitingTurn: (name) => `${name}의 차례를 기다리는 중...`,
+    arrangeInstruction: "내가 뽑은 두 장 · 상대에게 보여줄 카드를 탭하세요",
+    faceUp: "▲ 앞면 (공개)",
+    faceDown: "뒷면 (숨김)",
+    confirmArrange: "이대로 결정",
+    waitingArrange: (name) => `${name}가 카드를 배치하는 중...`,
+    chooseInstruction: "가져갈 카드를 탭하세요",
+    publicCard: "공개된 카드",
+    mysteryCard: "미지의 카드",
+    chooseFirst: "카드를 먼저 선택하세요",
+    confirm: "확인",
+    waitingChoose: (name) => `${name}가 카드를 선택하는 중...`,
+    calculating: "결과 계산 중...",
+    folded: (name) => `${name}가 폴드했습니다`,
+    wonPot: (name) => `${name} 승 · 팟 획득`,
+    nextRound: "다음 라운드",
+    tieCarry: "무승부 — 팟 이월",
+    won: (name) => `${name} 승!`,
+    redealSamePot: "다시 딜 (같은 팟)",
+    gameOverTie: "무승부로 게임 종료",
+    finalWinner: (name) => `${name} 최종 승리!`,
+    home: "홈으로",
+    opponentTookCard: "상대가 가져간 카드",
+    actionCall: (name) => `${name}: 콜`,
+    actionRaise: (name, amt) => `${name}: 레이즈 → ${amt}칩`,
+    cats: { 1: "원 페어", 2: "투 페어", 3: "트리플", 4: "스트레이트", 5: "풀하우스", 6: "포카드" },
+    waitingContinue: (name) => `${name}가 다음 라운드로 넘어가길 기다리는 중...`,
+    chooseLang: "언어를 선택하세요 / Choose your language",
+    rulesTitle: "게임 규칙",
+    rules: [
+      "목표: 개인 카드 2장 + 공유 카드 3장, 총 5장으로 가장 강한 조합을 만드세요.",
+      "시작: 각자 칩 20개로 시작. 매 라운드 기본 베팅(처음 1칩, 10라운드마다 +1)을 냅니다.",
+      "1차 베팅: 개인 카드 1장 + 공유 카드 3장을 보고 콜 / 레이즈 / 폴드로 베팅합니다.",
+      "카드 교환: 선플레이어가 카드 2장을 뽑아 하나는 앞면, 하나는 뒷면으로 놓습니다. 상대가 하나를 골라 가져가고, 남은 카드는 선플레이어가 가져갑니다.",
+      "2차 베팅: 다시 콜 / 레이즈 / 폴드로 베팅합니다.",
+      "승부: 개인 카드 2장 + 공유 카드 3장(총 5장)으로 최종 조합을 완성합니다.",
+      "조합 순위 (낮음→높음): 원페어 < 투페어 < 트리플 < 스트레이트(1-2-3-4-5) < 풀하우스 < 포카드",
+      "동점 처리: 조합 숫자가 높은 쪽이 승리 → 그래도 같으면 조합에 없는 개인 카드가 높은 쪽 승리 → 그래도 같으면 팟을 그대로 두고 다시 딜(선플레이어 유지, 추가 베팅 없음)",
+      "폴드하면 카드 공개 없이 그 라운드를 포기하고, 상대가 팟을 가져갑니다.",
+      "기본 베팅을 낼 칩이 없으면 그 즉시 패배로 게임이 종료됩니다.",
+    ],
+  },
+  en: {
+    title: "Choice Hold'em",
+    subtitle: "Play together across two phones",
+    namePlaceholder: "Your name",
+    createRoom: "Create Room",
+    joinRoom: "Join with Code",
+    joinCodePlaceholder: "Room code (e.g. AB12)",
+    join: "Join",
+    back: "Back",
+    rulesBtn: "How to Play",
+    closeRules: "Close",
+    roomNotFound: "Couldn't find a room with that code. Please double-check it.",
+    alreadyStarted: "That room's already in progress. Pick which seat was yours.",
+    imPlayer: (name) => `I'm ${name}`,
+    passCodeToOpponent: "Share this code with your opponent",
+    waitingForOpponent: "The game starts automatically once they join...",
+    connectionLost: "Lost connection to the server — reconnecting...",
+    round: "ROUND",
+    baseBet: "Base bet",
+    viewCode: "Show code",
+    roomCodeLabel: "Room code",
+    dealerTag: "1st",
+    myCards: "My cards",
+    myTurn: "Your turn",
+    callNeed: (n) => `Need ${n} chip(s) to call`,
+    checkEquivalent: "Call = Check",
+    fold: "Fold",
+    call: "Call",
+    allInCall: "All-in Call",
+    raise: "Raise",
+    waitingTurn: (name) => `Waiting for ${name}'s turn...`,
+    arrangeInstruction: "Your two drawn cards — tap the one to show your opponent",
+    faceUp: "▲ Face-up (shown)",
+    faceDown: "Face-down (hidden)",
+    confirmArrange: "Confirm",
+    waitingArrange: (name) => `${name} is arranging cards...`,
+    chooseInstruction: "Tap the card you want to take",
+    publicCard: "Revealed card",
+    mysteryCard: "Mystery card",
+    chooseFirst: "Pick a card first",
+    confirm: "Confirm",
+    waitingChoose: (name) => `${name} is choosing a card...`,
+    calculating: "Calculating result...",
+    folded: (name) => `${name} folded`,
+    wonPot: (name) => `${name} wins the pot`,
+    nextRound: "Next Round",
+    tieCarry: "Tie — pot carries over",
+    won: (name) => `${name} wins!`,
+    redealSamePot: "Redeal (same pot)",
+    gameOverTie: "Game over — tie",
+    finalWinner: (name) => `${name} wins the game!`,
+    home: "Home",
+    opponentTookCard: "Card your opponent took",
+    actionCall: (name) => `${name}: Call`,
+    actionRaise: (name, amt) => `${name}: Raise → ${amt} chips`,
+    cats: { 1: "One Pair", 2: "Two Pair", 3: "Triple", 4: "Straight", 5: "Full House", 6: "Four of a Kind" },
+    waitingContinue: (name) => `Waiting for ${name} to continue...`,
+    chooseLang: "언어를 선택하세요 / Choose your language",
+    rulesTitle: "How to Play",
+    rules: [
+      "Goal: combine your 2 personal cards with the 3 shared cards (5 total) into the strongest hand.",
+      "Setup: each player starts with 20 chips. Every round, both pay a base bet (starts at 1 chip, +1 every 10 rounds).",
+      "Round 1 betting: with 1 personal card + 3 shared cards visible, bet using Call / Raise / Fold.",
+      "Card split: the first player draws 2 cards, keeps one face-down and one face-up. The other player picks one to keep; the leftover goes to the first player.",
+      "Round 2 betting: Call / Raise / Fold again.",
+      "Showdown: combine your 2 personal cards + the 3 shared cards (5 total) into your final hand.",
+      "Hand ranking (low to high): One Pair < Two Pair < Triple < Straight (1-2-3-4-5) < Full House < Four of a Kind.",
+      "Ties: higher number in the hand wins → if still tied, the higher unused personal card wins → if still tied, the pot carries over and the hand is redealt (same first player, no new betting).",
+      "Folding forfeits the pot to your opponent for that round, with no cards revealed.",
+      "If you can't cover the base bet, you lose immediately.",
+    ],
+  },
+};
+
+/* ---------------------------------------------------------
+   PURE GAME LOGIC (identical rules to prior versions)
+--------------------------------------------------------- */
+function makeDeck() {
+  const deck = [];
+  let id = 0;
+  for (let v = 1; v <= 5; v++) for (let i = 0; i < 4; i++) deck.push({ id: id++, v });
+  return deck;
+}
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function evaluateHand(personalVals, sharedVals) {
+  const all = [...personalVals, ...sharedVals];
+  const counts = {};
+  all.forEach((v) => (counts[v] = (counts[v] || 0) + 1));
+  const uniq = Object.keys(counts).map(Number);
+  let cat, rep, usedCounts = {};
+  if (uniq.length === 5) {
+    cat = 4; rep = 5; usedCounts = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1 };
+  } else {
+    const groups = uniq.map((v) => ({ v, c: counts[v] })).sort((a, b) => b.c - a.c || b.v - a.v);
+    if (groups[0].c === 4) { cat = 6; rep = groups[0].v; usedCounts[groups[0].v] = 4; }
+    else if (groups[0].c === 3 && groups[1] && groups[1].c === 2) { cat = 5; rep = groups[0].v * 10 + groups[1].v; usedCounts[groups[0].v] = 3; usedCounts[groups[1].v] = 2; }
+    else if (groups[0].c === 3) { cat = 3; rep = groups[0].v; usedCounts[groups[0].v] = 3; }
+    else if (groups[0].c === 2 && groups[1] && groups[1].c === 2) {
+      const hi = Math.max(groups[0].v, groups[1].v), lo = Math.min(groups[0].v, groups[1].v);
+      cat = 2; rep = hi * 10 + lo; usedCounts[groups[0].v] = 2; usedCounts[groups[1].v] = 2;
+    } else { cat = 1; rep = groups[0].v; usedCounts[groups[0].v] = 2; }
+  }
+  const remain = { ...counts };
+  Object.entries(usedCounts).forEach(([v, c]) => (remain[v] = (remain[v] || 0) - c));
+  let kicker = null;
+  const remainCopy = { ...remain };
+  personalVals.forEach((p) => {
+    if ((remainCopy[p] || 0) > 0) {
+      if (kicker === null || p > kicker) kicker = p;
+      remainCopy[p] -= 1;
+    }
+  });
+  return { cat, rep, kicker: kicker === null ? -1 : kicker };
+}
+function compareHands(a, b) {
+  if (a.cat !== b.cat) return a.cat > b.cat ? 1 : 2;
+  if (a.rep !== b.rep) return a.rep > b.rep ? 1 : 2;
+  if (a.kicker !== b.kicker) return a.kicker > b.kicker ? 1 : 2;
+  return 0;
+}
+function baseBetForRound(round) { return 1 + Math.floor((round - 1) / 10); }
+function dealNewHand(state) {
+  const deck = shuffle(makeDeck());
+  const shared = [deck.pop(), deck.pop(), deck.pop()];
+  const p0 = [deck.pop()];
+  const p1 = [deck.pop()];
+  return { ...state, deck, shared, personal: [p0, p1], arrangeDrawn: [], arrangeFaceUpIdx: 0, chooseTakenBy: null };
+}
+function startRound(state) {
+  const round = state.round;
+  const bb = baseBetForRound(round);
+  if (state.isTieRedeal) {
+    let s = dealNewHand(state);
+    s.phase = "ARRANGE";
+    const deck = [...s.deck];
+    s.arrangeDrawn = [deck.pop(), deck.pop()];
+    s.deck = deck;
+    s.lastMsgKey = "tieRedeal";
+    return s;
+  }
+  const short = state.chips.map((c) => c < bb);
+  if (short[0] || short[1]) {
+    let winnerOfGame = null;
+    if (short[0] && !short[1]) winnerOfGame = 1;
+    else if (short[1] && !short[0]) winnerOfGame = 0;
+    return { ...state, phase: "GAME_OVER", winnerOfGame };
+  }
+  const chips = [state.chips[0] - bb, state.chips[1] - bb];
+  const pot = state.pot + bb * 2;
+  let s = dealNewHand({ ...state, chips, pot, bet: [bb, bb], firstMoveDone: false, turn: state.dealer });
+  s.phase = "BET1";
+  s.lastMsgKey = null;
+  return s;
+}
+function applyBetAction(state, action, amount) {
+  const me = state.turn;
+  const opp = 1 - me;
+  let { chips, bet, firstMoveDone, pot } = state;
+  chips = [...chips]; bet = [...bet];
+  if (action === "fold") {
+    const newChips = [...chips];
+    newChips[opp] += pot;
+    return { ...state, chips: newChips, pot: 0, phase: "RESULT", result: { type: "fold", winner: opp } };
+  }
+  if (action === "call") {
+    const need = Math.max(0, bet[opp] - bet[me]);
+    const pay = Math.min(need, chips[me]);
+    chips[me] -= pay; bet[me] += pay; pot += pay;
+    if (!firstMoveDone) {
+      return { ...state, chips, bet, pot, firstMoveDone: true, turn: opp, lastMsgKey: "call", lastMsgPlayer: me };
+    }
+    if (state.phase === "BET1") {
+      const deck = [...state.deck];
+      const drawn = [deck.pop(), deck.pop()];
+      return { ...state, chips, bet, pot, deck, arrangeDrawn: drawn, arrangeFaceUpIdx: 0, phase: "ARRANGE", lastMsgKey: "call", lastMsgPlayer: me };
+    }
+    return { ...state, chips, bet, pot, phase: "SHOWDOWN", lastMsgKey: "call", lastMsgPlayer: me };
+  }
+  if (action === "raise") {
+    const target = Math.min(amount, chips[me] + bet[me]);
+    const add = Math.max(0, target - bet[me]);
+    chips[me] -= add; bet[me] += add; pot += add;
+    return { ...state, chips, bet, pot, firstMoveDone: true, turn: opp, lastMsgKey: "raise", lastMsgPlayer: me, lastMsgAmount: bet[me] };
+  }
+  return state;
+}
+function confirmArrange(state, faceUpIdx) { return { ...state, arrangeFaceUpIdx: faceUpIdx, phase: "CHOOSE" }; }
+function confirmChoose(state, takeIdx) {
+  const dealer = state.dealer;
+  const other = 1 - dealer;
+  const drawn = state.arrangeDrawn;
+  const taken = drawn[takeIdx];
+  const leftover = drawn[1 - takeIdx];
+  const personal = [[...state.personal[0]], [...state.personal[1]]];
+  personal[other] = [...personal[other], taken];
+  personal[dealer] = [...personal[dealer], leftover];
+  if (state.isTieRedeal) return { ...state, personal, chooseTakenBy: takeIdx, phase: "SHOWDOWN" };
+  return { ...state, personal, chooseTakenBy: takeIdx, bet: [0, 0], firstMoveDone: false, turn: dealer, phase: "BET2" };
+}
+function resolveShowdown(state) {
+  const sharedVals = state.shared.map((c) => c.v);
+  const handA = evaluateHand(state.personal[0].map((c) => c.v), sharedVals);
+  const handB = evaluateHand(state.personal[1].map((c) => c.v), sharedVals);
+  const cmp = compareHands(handA, handB);
+  if (cmp === 0) return { ...state, phase: "RESULT", isTieRedeal: true, result: { type: "tie", handA, handB } };
+  const winner = cmp === 1 ? 0 : 1;
+  const chips = [...state.chips];
+  chips[winner] += state.pot;
+  return { ...state, chips, pot: 0, isTieRedeal: false, phase: "RESULT", result: { type: "showdown", winner, handA, handB } };
+}
+function nextRoundAfterResult(state) {
+  const round = state.round + 1;
+  let dealer = state.dealer;
+  if (!state.isTieRedeal) dealer = 1 - state.dealer;
+  const nextState = { ...state, round, dealer, result: null };
+  if (!state.isTieRedeal) {
+    const bb = baseBetForRound(round);
+    const short = nextState.chips.map((c) => c < bb);
+    if (short[0] || short[1]) {
+      let winnerOfGame = null;
+      if (short[0] && !short[1]) winnerOfGame = 1;
+      else if (short[1] && !short[0]) winnerOfGame = 0;
+      return { ...nextState, phase: "GAME_OVER", winnerOfGame };
+    }
+  }
+  return startRound(nextState);
+}
+function freshGame(name0, name1) {
+  return {
+    phase: "LOBBY", names: [name0, name1 || null], chips: [20, 20], round: 1, dealer: 0, pot: 0,
+    deck: [], shared: [], personal: [[], []], bet: [0, 0], firstMoveDone: false, turn: 0,
+    isTieRedeal: false, arrangeDrawn: [], arrangeFaceUpIdx: 0, chooseTakenBy: null,
+    lastMsgKey: null, lastMsgPlayer: null, lastMsgAmount: null, result: null, winnerOfGame: null, rev: 0,
+  };
+}
+
+/* ---------------------------------------------------------
+   UI PIECES
+--------------------------------------------------------- */
+function PlayingCard({ value, hidden, size = "md" }) {
+  const dims = size === "lg" ? { w: 88, h: 124, fs: 44 } : size === "sm" ? { w: 52, h: 74, fs: 24 } : { w: 68, h: 96, fs: 32 };
+  if (hidden) {
+    return <div style={{ width: dims.w, height: dims.h, borderRadius: 10, background: `repeating-linear-gradient(135deg, ${C.feltLine}, ${C.feltLine} 6px, ${C.feltDeep} 6px, ${C.feltDeep} 12px)`, border: `2px solid ${C.goldDim}`, boxShadow: "0 3px 8px rgba(0,0,0,0.4)" }} />;
+  }
+  return (
+    <div style={{ width: dims.w, height: dims.h, borderRadius: 10, background: C.cream, border: `2px solid ${C.gold}`, boxShadow: "0 3px 8px rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+      <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 800, fontSize: dims.fs, color: C.ink }}>{value}</span>
+      <span style={{ position: "absolute", top: 4, left: 6, fontSize: 10, fontFamily: "'Fraunces', serif", fontWeight: 700, color: C.ink2 }}>{value}</span>
+      <span style={{ position: "absolute", bottom: 4, right: 6, fontSize: 10, fontFamily: "'Fraunces', serif", fontWeight: 700, color: C.ink2, transform: "rotate(180deg)" }}>{value}</span>
+    </div>
+  );
+}
+function TopBar({ state, connected, roomCode, t }) {
+  const bb = baseBetForRound(state.round);
+  const [showCode, setShowCode] = useState(false);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", borderBottom: `1px solid ${C.feltLine}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px" }}>
+        <div onClick={() => setShowCode((v) => !v)} style={{ fontFamily: "'Inter'", fontSize: 12, color: C.goldDim, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+          <Icon>{connected ? "📶" : "⚠️"}</Icon> {t("round")} {state.round} · {t("baseBet")} {bb} · {t("viewCode")}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "'Fraunces', serif", fontWeight: 700, color: C.gold }}>
+          <Icon size={16}>🪙</Icon> {state.pot}
+        </div>
+      </div>
+      {showCode && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "0 16px 10px", fontSize: 12, color: C.ink2 }}>
+          {t("roomCodeLabel")}: <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, color: C.gold, letterSpacing: 2 }}>{roomCode}</span>
+          <span onClick={() => navigator.clipboard && navigator.clipboard.writeText(roomCode)} style={{ cursor: "pointer" }}><Icon size={13}>📋</Icon></span>
+        </div>
+      )}
+    </div>
+  );
+}
+function ChipRow({ state, t }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 16px" }}>
+      {[0, 1].map((i) => (
+        <div key={i} style={{ textAlign: i === 0 ? "left" : "right" }}>
+          <div style={{ fontSize: 11, color: C.ink2, fontFamily: "'Inter'" }}>{state.names[i]} {state.dealer === i ? `· ${t("dealerTag")}` : ""}</div>
+          <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, color: C.cream, fontSize: 18 }}>{state.chips[i]}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function SharedRow({ shared }) {
+  return <div style={{ display: "flex", justifyContent: "center", gap: 10, margin: "18px 0" }}>{shared.map((c) => <PlayingCard key={c.id} value={c.v} size="md" />)}</div>;
+}
+function Btn({ children, onClick, variant = "primary", disabled, style }) {
+  const bg = variant === "primary" ? C.gold : variant === "danger" ? C.danger : "transparent";
+  const color = variant === "primary" ? C.ink : variant === "danger" ? C.cream : C.cream;
+  const border = variant === "ghost" ? `1px solid ${C.goldDim}` : "none";
+  return (
+    <button onClick={onClick} disabled={disabled} style={{ background: disabled ? C.ink2 : bg, color: disabled ? C.feltLine : color, border, borderRadius: 10, padding: "14px 18px", fontFamily: "'Inter'", fontWeight: 700, fontSize: 15, opacity: disabled ? 0.5 : 1, cursor: disabled ? "not-allowed" : "pointer", ...style }}>
+      {children}
+    </button>
+  );
+}
+function Waiting({ text }) {
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 24 }}>
+      <Icon size={30}>🔒</Icon>
+      <div style={{ fontFamily: "'Inter'", fontSize: 14, color: C.ink2, textAlign: "center", whiteSpace: "pre-line" }}>{text}</div>
+    </div>
+  );
+}
+function PickRecap({ drawn, faceUpIdx, takenIdx, t }) {
+  if (takenIdx === null || takenIdx === undefined || !drawn || drawn.length < 2) return null;
+  return (
+    <div style={{ position: "absolute", left: 12, bottom: 12, display: "flex", flexDirection: "column", gap: 5, background: "rgba(10,33,27,0.9)", border: `1px solid ${C.feltLine}`, borderRadius: 10, padding: "8px 10px", zIndex: 5 }}>
+      <div style={{ fontSize: 10, color: C.ink2, fontFamily: "'Inter'" }}>{t("opponentTookCard")}</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {drawn.map((c, idx) => {
+          const isFaceUp = idx === faceUpIdx;
+          const picked = idx === takenIdx;
+          return (
+            <div key={c.id} style={{ position: "relative" }}>
+              <PlayingCard value={c.v} hidden={!isFaceUp} size="sm" />
+              {picked && <div style={{ position: "absolute", inset: -4, border: `2px solid ${C.gold}`, borderRadius: 12, boxShadow: `0 0 10px ${C.gold}`, pointerEvents: "none" }} />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+function RulesModal({ t, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(5,15,12,0.92)", zIndex: 50, display: "flex", flexDirection: "column", padding: 24, fontFamily: "'Inter', sans-serif" }}>
+      <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 800, fontSize: 22, color: C.gold, marginBottom: 16 }}>{t("rulesTitle")}</div>
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {t("rules").map((line, i) => (
+          <div key={i} style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            <div style={{ color: C.goldDim, fontFamily: "'Fraunces', serif", fontWeight: 700, minWidth: 20 }}>{i + 1}.</div>
+            <div style={{ color: C.cream, fontSize: 14, lineHeight: 1.5 }}>{line}</div>
+          </div>
+        ))}
+      </div>
+      <Btn onClick={onClose} style={{ marginTop: 12 }}>{t("closeRules")}</Btn>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   MAIN APP
+--------------------------------------------------------- */
+function ChoiceHoldemOnline() {
+  const [lang, setLang] = useState(null); // null = language not chosen yet
+  const [showRules, setShowRules] = useState(false);
+  const [screen, setScreen] = useState("HOME");
+  const [nameDraft, setNameDraft] = useState("");
+  const [codeDraft, setCodeDraft] = useState("");
+  const [roomCode, setRoomCode] = useState(null);
+  const [mySeat, setMySeat] = useState(null);
+  const [state, setState] = useState(null);
+  const [connected, setConnected] = useState(true);
+  const [raiseAmt, setRaiseAmt] = useState(null);
+  const [errorMsgKey, setErrorMsgKey] = useState(null);
+  const stateRef = useRef(null);
+  const socketRef = useRef(null);
+  const roomCodeRef = useRef(null);
+  stateRef.current = state;
+  roomCodeRef.current = roomCode;
+
+  function t(key, ...args) {
+    const dict = STR[lang || "ko"];
+    const v = dict[key];
+    return typeof v === "function" ? v(...args) : v;
+  }
+
+  // one persistent socket connection for the whole session
+  useEffect(() => {
+    const socket = io();
+    socketRef.current = socket;
+    socket.on("connect", () => {
+      setConnected(true);
+      // A dropped connection (idle timeout, phone backgrounded, wifi hiccup) does
+      // not automatically re-subscribe this socket to the room's broadcast group
+      // on the server — without this, a reconnected client would sit connected
+      // but silently stop hearing about the opponent's actions. Re-join whenever
+      // we (re)connect and already know which room we're in, and pick up
+      // whatever happened while we were away.
+      if (roomCodeRef.current) {
+        socket.emit("room:join", roomCodeRef.current, (res) => {
+          if (res && res.ok && res.state) {
+            if (!stateRef.current || (res.state.rev || 0) > (stateRef.current.rev || 0)) {
+              stateRef.current = res.state;
+              setState(res.state);
+            }
+          }
+        });
+      }
+    });
+    socket.on("disconnect", () => setConnected(false));
+    socket.on("room:state", (remote) => {
+      if (!stateRef.current || (remote.rev || 0) > (stateRef.current.rev || 0)) {
+        stateRef.current = remote;
+        setState(remote);
+      }
+    });
+    return () => socket.disconnect();
+  }, []);
+
+  function go(updater) {
+    const base = stateRef.current;
+    const next = updater(base);
+    next.rev = (base.rev || 0) + 1;
+    stateRef.current = next;
+    setState(next);
+    socketRef.current.emit("room:update", { code: roomCode, state: next });
+  }
+
+  function createRoom() {
+    const myName = nameDraft.trim() || "P1";
+    const initial = freshGame(myName, null);
+    socketRef.current.emit("room:create", initial, (res) => {
+      if (!res || !res.ok) return;
+      setRoomCode(res.code);
+      setMySeat(0);
+      stateRef.current = res.state;
+      setState(res.state);
+      setScreen("GAME");
+    });
+  }
+
+  function joinRoom() {
+    const code = codeDraft.trim().toUpperCase();
+    if (!code) return;
+    const myName = nameDraft.trim() || "P2";
+    setErrorMsgKey(null);
+    // room:claim is server-authoritative and atomic — only one join attempt for
+    // this room can ever come back claimed:true, even under a rapid double-tap.
+    socketRef.current.emit("room:claim", code, (res) => {
+      if (!res || !res.ok) { setErrorMsgKey("roomNotFound"); return; }
+      const remote = res.state;
+      if (res.claimed) {
+        const next = { ...remote, names: [remote.names[0], myName], rev: (remote.rev || 0) + 1 };
+        const started = startRound({ ...next });
+        started.rev = next.rev;
+        setRoomCode(code); setMySeat(1); stateRef.current = started; setState(started); setScreen("GAME");
+        socketRef.current.emit("room:update", { code, state: started });
+      } else {
+        setRoomCode(code); stateRef.current = remote; setState(remote);
+        setErrorMsgKey("alreadyStarted");
+        setScreen("REJOIN");
+      }
+    });
+  }
+
+  function rejoinAs(seat) { setMySeat(seat); setScreen("GAME"); }
+
+  const opp = state ? 1 - mySeat : null;
+  const me = mySeat;
+  const callNeed = state ? Math.max(0, (state.bet[opp] || 0) - (state.bet[me] || 0)) : 0;
+  const canRaise = state ? state.chips[me] > callNeed : false;
+  const raiseDisplay = state ? raiseAmt ?? state.bet[me] + Math.min(state.chips[me], callNeed + 1) : 0;
+
+  useEffect(() => {
+    if (!state) return;
+    if ((state.phase === "BET1" || state.phase === "BET2") && state.turn === mySeat) {
+      const minRaise = Math.min(state.chips[me], callNeed + 1);
+      setRaiseAmt(state.bet[me] + minRaise);
+    }
+  }, [state && state.phase, state && state.turn, state && state.bet[0], state && state.bet[1]]);
+
+  useEffect(() => {
+    if (state && state.phase === "SHOWDOWN") go((s) => (s.phase === "SHOWDOWN" ? resolveShowdown(s) : s));
+  }, [state && state.phase]);
+
+  function lastMsgText() {
+    if (!state || !state.lastMsgKey) return "";
+    const name = state.names[state.lastMsgPlayer];
+    if (state.lastMsgKey === "call") return t("actionCall", name);
+    if (state.lastMsgKey === "raise") return t("actionRaise", name, state.lastMsgAmount);
+    return "";
+  }
+
+  /* ---------------- Language select (first screen ever shown) ---------------- */
+  if (!lang) {
+    return (
+      <div style={{ minHeight: "100dvh", background: `radial-gradient(ellipse at top, ${C.felt}, ${C.feltDeep})`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, gap: 22, fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 900, fontSize: 34, color: C.gold }}>초이스 홀덤 / Choice Hold'em</div>
+        <div style={{ color: C.ink2, fontSize: 13 }}>언어를 선택하세요 / Choose your language</div>
+        <div style={{ display: "flex", gap: 14 }}>
+          <Btn onClick={() => setLang("ko")} style={{ width: 130 }}>한국어</Btn>
+          <Btn onClick={() => setLang("en")} variant="ghost" style={{ width: 130 }}>English</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  if (showRules) return <RulesModal t={t} onClose={() => setShowRules(false)} />;
+
+  if (screen !== "GAME") {
+    return (
+      <div style={{ minHeight: "100dvh", background: `radial-gradient(ellipse at top, ${C.felt}, ${C.feltDeep})`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, gap: 20, fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 900, fontSize: 36, color: C.gold }}>{t("title")}</div>
+          <div style={{ color: C.ink2, fontSize: 13, marginTop: 6 }}>{t("subtitle")}</div>
+        </div>
+        {screen === "HOME" && (
+          <>
+            <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder={t("namePlaceholder")} style={{ width: 220, padding: "12px 14px", borderRadius: 10, border: `1px solid ${C.feltLine}`, background: C.feltDeep, color: C.cream, fontSize: 15 }} />
+            <Btn onClick={createRoom} style={{ width: 220 }}>{t("createRoom")}</Btn>
+            <Btn variant="ghost" onClick={() => setScreen("JOIN")} style={{ width: 220 }}>{t("joinRoom")}</Btn>
+            <Btn variant="ghost" onClick={() => setShowRules(true)} style={{ width: 220 }}><span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><Icon>📖</Icon> {t("rulesBtn")}</span></Btn>
+            <div onClick={() => setLang(null)} style={{ fontSize: 11, color: C.ink2, cursor: "pointer", textDecoration: "underline" }}>
+              {lang === "ko" ? "English" : "한국어"}
+            </div>
+          </>
+        )}
+        {screen === "JOIN" && (
+          <>
+            <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder={t("namePlaceholder")} style={{ width: 220, padding: "12px 14px", borderRadius: 10, border: `1px solid ${C.feltLine}`, background: C.feltDeep, color: C.cream, fontSize: 15 }} />
+            <input value={codeDraft} onChange={(e) => setCodeDraft(e.target.value.toUpperCase())} placeholder={t("joinCodePlaceholder")} style={{ width: 220, padding: "12px 14px", borderRadius: 10, border: `1px solid ${C.feltLine}`, background: C.feltDeep, color: C.cream, fontSize: 15, textAlign: "center", letterSpacing: 2 }} />
+            <Btn onClick={joinRoom} style={{ width: 220 }}>{t("join")}</Btn>
+            <Btn variant="ghost" onClick={() => setScreen("HOME")} style={{ width: 220 }}>{t("back")}</Btn>
+            {errorMsgKey && <div style={{ color: C.danger, fontSize: 12, textAlign: "center", maxWidth: 260 }}>{t(errorMsgKey)}</div>}
+          </>
+        )}
+        {screen === "REJOIN" && state && (
+          <>
+            <div style={{ color: C.cream, fontSize: 14 }}>{t(errorMsgKey)}</div>
+            <Btn onClick={() => rejoinAs(0)} style={{ width: 220 }}>{t("imPlayer", state.names[0])}</Btn>
+            <Btn onClick={() => rejoinAs(1)} style={{ width: 220 }}>{t("imPlayer", state.names[1])}</Btn>
+            <Btn variant="ghost" onClick={() => setScreen("HOME")} style={{ width: 220 }}>{t("back")}</Btn>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  if (!state) return null;
+
+  if (state.phase === "LOBBY") {
+    return (
+      <div style={{ minHeight: "100dvh", background: `radial-gradient(ellipse at top, ${C.felt}, ${C.feltDeep})`, display: "flex", flexDirection: "column", fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18, padding: 24 }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: C.cream }}>{t("passCodeToOpponent")}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 900, fontSize: 44, color: C.gold, letterSpacing: 6 }}>{roomCode}</div>
+            <span onClick={() => navigator.clipboard && navigator.clipboard.writeText(roomCode)} style={{ cursor: "pointer" }}><Icon size={20}>📋</Icon></span>
+          </div>
+          <div style={{ color: C.ink2, fontSize: 13 }}>{t("waitingForOpponent")}</div>
+          {!connected && <div style={{ color: C.danger, fontSize: 12 }}>{t("connectionLost")}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  const isMyTurn = (phase) => {
+    if (phase === "BET1" || phase === "BET2") return state.turn === mySeat;
+    if (phase === "ARRANGE") return state.dealer === mySeat;
+    if (phase === "CHOOSE") return 1 - state.dealer === mySeat;
+    return false;
+  };
+  const showRecap = state.phase === "BET2" || state.phase === "SHOWDOWN" || state.phase === "RESULT";
+
+  return (
+    <div style={{ minHeight: "100dvh", background: `radial-gradient(ellipse at top, ${C.felt}, ${C.feltDeep})`, display: "flex", flexDirection: "column", fontFamily: "'Inter', sans-serif", position: "relative" }}>
+      {showRecap && <PickRecap drawn={state.arrangeDrawn} faceUpIdx={state.arrangeFaceUpIdx} takenIdx={state.chooseTakenBy} t={t} />}
+      <TopBar state={state} connected={connected} roomCode={roomCode} t={t} />
+
+      {state.phase !== "GAME_OVER" && (
+        <>
+          <ChipRow state={state} t={t} />
+          <SharedRow shared={state.shared} />
+          <div style={{ textAlign: "center", marginBottom: 6 }}>
+            <div style={{ fontSize: 12, color: C.ink2, marginBottom: 6 }}>{t("myCards")}</div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>{state.personal[mySeat].map((c) => <PlayingCard key={c.id} value={c.v} size="md" />)}</div>
+          </div>
+        </>
+      )}
+
+      {(state.phase === "BET1" || state.phase === "BET2") && (
+        isMyTurn(state.phase) ? (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "10px 20px 20px" }}>
+            <div style={{ textAlign: "center", fontSize: 13, color: C.ink2, minHeight: 18 }}>{lastMsgText()}</div>
+            <div style={{ flex: 1 }} />
+            <div style={{ textAlign: "center", marginBottom: 14 }}>
+              <div style={{ fontFamily: "'Fraunces', serif", color: C.gold, fontWeight: 700, fontSize: 18 }}>{t("myTurn")}</div>
+              <div style={{ fontSize: 12, color: C.ink2, marginTop: 2 }}>{callNeed > 0 ? t("callNeed", callNeed) : t("checkEquivalent")}</div>
+            </div>
+            {canRaise && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, justifyContent: "center" }}>
+                <Btn variant="ghost" onClick={() => setRaiseAmt((a) => Math.max(state.bet[me] + callNeed + 1, (a ?? raiseDisplay) - 1))} style={{ padding: "8px 14px" }}>−</Btn>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: C.cream, minWidth: 90, textAlign: "center" }}>{raiseDisplay}</div>
+                <Btn variant="ghost" onClick={() => setRaiseAmt((a) => Math.min(state.chips[me] + state.bet[me], (a ?? raiseDisplay) + 1))} style={{ padding: "8px 14px" }}>+</Btn>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn variant="danger" onClick={() => go((s) => applyBetAction(s, "fold"))} style={{ flex: 1 }}><span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><Icon>🚫</Icon> {t("fold")}</span></Btn>
+              <Btn variant="ghost" onClick={() => go((s) => applyBetAction(s, "call"))} style={{ flex: 1 }}>{callNeed >= state.chips[me] && callNeed > 0 ? t("allInCall") : t("call")}</Btn>
+              <Btn disabled={!canRaise} onClick={() => go((s) => applyBetAction(s, "raise", raiseDisplay))} style={{ flex: 1 }}><span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><Icon>🔥</Icon> {t("raise")}</span></Btn>
+            </div>
+          </div>
+        ) : (
+          <Waiting text={`${t("waitingTurn", state.names[opp])}\n${lastMsgText()}`} />
+        )
+      )}
+
+      {state.phase === "ARRANGE" && (
+        isMyTurn("ARRANGE") ? (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 24 }}>
+            <div style={{ textAlign: "center", fontSize: 12, color: C.ink2, marginBottom: 14 }}>{t("arrangeInstruction")}</div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 16, flex: 1, alignItems: "center" }}>
+              {state.arrangeDrawn.map((c, idx) => (
+                <div key={c.id} onClick={() => go((s) => ({ ...s, arrangeFaceUpIdx: idx }))} style={{ cursor: "pointer", textAlign: "center" }}>
+                  <PlayingCard value={c.v} size="lg" />
+                  <div style={{ marginTop: 8, fontSize: 12, color: idx === state.arrangeFaceUpIdx ? C.gold : C.ink2, fontWeight: idx === state.arrangeFaceUpIdx ? 700 : 400 }}>{idx === state.arrangeFaceUpIdx ? t("faceUp") : t("faceDown")}</div>
+                </div>
+              ))}
+            </div>
+            <Btn onClick={() => go((s) => confirmArrange(s, s.arrangeFaceUpIdx))}>{t("confirmArrange")}</Btn>
+          </div>
+        ) : (
+          <Waiting text={t("waitingArrange", state.names[state.dealer])} />
+        )
+      )}
+
+      {state.phase === "CHOOSE" && (
+        isMyTurn("CHOOSE") ? (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 24 }}>
+            <div style={{ textAlign: "center", fontSize: 12, color: C.ink2, marginBottom: 14 }}>{t("chooseInstruction")}</div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 16, flex: 1, alignItems: "center" }}>
+              {state.arrangeDrawn.map((c, idx) => {
+                const isFaceUp = idx === state.arrangeFaceUpIdx;
+                const picked = state.chooseTakenBy === idx;
+                return (
+                  <div key={c.id} onClick={() => setState((s) => ({ ...s, chooseTakenBy: idx }))} style={{ cursor: "pointer", textAlign: "center", outline: picked ? `2px solid ${C.gold}` : "none", borderRadius: 12, padding: 4 }}>
+                    <PlayingCard value={c.v} hidden={!isFaceUp} size="lg" />
+                    <div style={{ marginTop: 8, fontSize: 12, color: C.ink2 }}>{isFaceUp ? t("publicCard") : t("mysteryCard")}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <Btn disabled={state.chooseTakenBy === null} onClick={() => go((s) => confirmChoose(s, s.chooseTakenBy))}>{state.chooseTakenBy === null ? t("chooseFirst") : t("confirm")}</Btn>
+          </div>
+        ) : (
+          <Waiting text={t("waitingChoose", state.names[1 - state.dealer])} />
+        )
+      )}
+
+      {state.phase === "SHOWDOWN" && <Waiting text={t("calculating")} />}
+
+      {state.phase === "RESULT" && (() => {
+        const r = state.result;
+        const canContinue = mySeat === 0; // only one seat may trigger the next deal — prevents both players
+                                            // independently computing a different random hand at the same moment
+        if (r.type === "fold") {
+          return (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 24 }}>
+              <Icon size={32}>🚫</Icon>
+              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: C.cream, textAlign: "center" }}>{t("folded", state.names[1 - r.winner])}</div>
+              <div style={{ color: C.gold, fontFamily: "'Fraunces', serif", fontWeight: 700 }}>{t("wonPot", state.names[r.winner])}</div>
+              {canContinue ? (
+                <Btn onClick={() => go((s) => nextRoundAfterResult(s))}>{t("nextRound")}</Btn>
+              ) : (
+                <div style={{ fontSize: 13, color: C.ink2 }}>{t("waitingContinue", state.names[0])}</div>
+              )}
+            </div>
+          );
+        }
+        const showTie = r.type === "tie";
+        return (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 24, gap: 12, overflowY: "auto" }}>
+            <div style={{ textAlign: "center" }}>
+              {showTie ? <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: C.cream }}>{t("tieCarry")}</div> : (
+                <>
+                  <Icon size={26}>🏆</Icon>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: C.gold }}>{t("won", state.names[r.winner])}</div>
+                </>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-around" }}>
+              {[0, 1].map((i) => (
+                <div key={i} style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 12, color: C.ink2, marginBottom: 6 }}>{state.names[i]}</div>
+                  <div style={{ display: "flex", gap: 6 }}>{state.personal[i].map((c) => <PlayingCard key={c.id} value={c.v} size="sm" />)}</div>
+                  <div style={{ marginTop: 6, fontSize: 13, color: C.gold, fontFamily: "'Fraunces', serif", fontWeight: 700 }}>{t("cats")[i === 0 ? r.handA.cat : r.handB.cat]}</div>
+                </div>
+              ))}
+            </div>
+            {canContinue ? (
+              <Btn onClick={() => go((s) => nextRoundAfterResult(s))}>{showTie ? t("redealSamePot") : t("nextRound")}</Btn>
+            ) : (
+              <div style={{ textAlign: "center", fontSize: 13, color: C.ink2 }}>{t("waitingContinue", state.names[0])}</div>
+            )}
+          </div>
+        );
+      })()}
+
+      {state.phase === "GAME_OVER" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18, padding: 24 }}>
+          <Icon size={40}>🏆</Icon>
+          <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 800, fontSize: 24, color: C.cream, textAlign: "center" }}>{state.winnerOfGame === null ? t("gameOverTie") : t("finalWinner", state.names[state.winnerOfGame])}</div>
+          <div style={{ display: "flex", gap: 30 }}>
+            {[0, 1].map((i) => (
+              <div key={i} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 12, color: C.ink2 }}>{state.names[i]}</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: C.cream }}>{state.chips[i]}</div>
+              </div>
+            ))}
+          </div>
+          <Btn onClick={() => { setScreen("HOME"); setState(null); setRoomCode(null); }}><span style={{ display: "flex", alignItems: "center", gap: 8 }}><Icon>🔄</Icon> {t("home")}</span></Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<ChoiceHoldemOnline />);
+</script>
+
+<script>
+  // Manually compile and run our app code instead of relying on Babel's automatic
+  // whole-page script scanning — that auto-scan can be tripped up by unrelated
+  // scripts elsewhere on the page (e.g. ones injected by browser extensions),
+  // producing a page that never renders. Doing it explicitly here means our code
+  // only ever depends on itself.
+  var source = document.getElementById("app-source").textContent;
+  var compiled = Babel.transform(source, { presets: [["react", { runtime: "classic" }]] }).code;
+  var runScript = document.createElement("script");
+  runScript.textContent = compiled;
+  document.body.appendChild(runScript);
+</script>
+</body>
+</html>
